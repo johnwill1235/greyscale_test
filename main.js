@@ -68,7 +68,8 @@ function masterDraw() {
     animationCtx.clearRect(0, 0, mapWidth, mapHeight);
 
     // Redraw all components in their correct order
-    if (exploredCanvas) {
+    // Only redraw explored areas if pathfinding is currently active
+    if (exploredCanvas && isPathfindingActive) {
         animationCtx.drawImage(exploredCanvas, 0, 0);
     }
     drawAllRoads(); // Redraws permanent roads
@@ -79,7 +80,35 @@ function masterDraw() {
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
         masterDraw();
+    } else {
+        // Clean up when page becomes hidden
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+        // Clear any ongoing animation state
+        tendrilsToDraw = [];
     }
+});
+
+// Ensure clean state on page load
+window.addEventListener('load', () => {
+    // Reset all state variables
+    isPathfindingActive = false;
+    animationFrameId = null;
+    tendrilsToDraw = [];
+    currentStartCityName = null;
+    currentEndCityName = null;
+    allPaths = [];
+    leaderboardRoads = [];
+    
+    // Clear explored areas
+    if (exploredPixelsBitmap) {
+        exploredPixelsBitmap.fill(0);
+    }
+    
+    // Enable start button
+    startButton.disabled = false;
 });
 
 function drawCities(activeCity1Name = null, activeCity2Name = null) {
@@ -274,6 +303,10 @@ function drawLightning(path) {
     function flash() {
         if (flashes >= maxFlashes) {
             animationCtx.clearRect(0, 0, mapWidth, mapHeight);
+            
+            // Clear explored areas after lightning flash completes
+            clearExploredAreas();
+            
             currentStartCityName = null;
             currentEndCityName = null;
             drawCities(); // Redraw cities to remove highlights
@@ -311,6 +344,33 @@ function drawPermanentRoad(pathCoords) {
 startButton.addEventListener('click', () => {
     console.log('Starting simulation...');
     startButton.disabled = true;
+    
+    // Clear all previous state when starting new simulation
+    isPathfindingActive = false;
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
+    tendrilsToDraw = [];
+    currentStartCityName = null;
+    currentEndCityName = null;
+    
+    // Clear explored areas from previous simulations
+    clearExploredAreas();
+    
+    // Clear all canvases to start fresh
+    roadCtx.clearRect(0, 0, mapWidth, mapHeight);
+    cityCtx.clearRect(0, 0, mapWidth, mapHeight);
+    animationCtx.clearRect(0, 0, mapWidth, mapHeight);
+    
+    // Reset road data
+    allPaths = [];
+    leaderboardRoads = [];
+    leaderboardList.innerHTML = '';
+    
+    // Redraw base state
+    drawCities();
+    
     worker.postMessage({ type: 'start' });
     // The animation loop will now be started by the 'findingPath' message.
 });

@@ -772,6 +772,12 @@ self.onmessage = (e) => {
 
     if (type === 'start') {
         postMessage({ type: 'log', payload: 'Worker started.' });
+        
+        // Reset worker state for new simulation
+        if (state.map.roadUsageGrid) {
+            state.map.roadUsageGrid.fill(0); // Reset road usage tracking
+        }
+        
         setup().then(() => {
             simulationLoop();
         });
