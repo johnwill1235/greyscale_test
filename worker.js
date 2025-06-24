@@ -579,8 +579,8 @@ async function findPath(startCity, endCity) {
 
             // Step 3: Apply a "city buff" using the pre-calculated influence grid.
             const cityDistance = cityInfluenceGrid[v];
-            if (cityDistance < 50) { // 50 is the radius used in the pre-calculation
-                const cityFactor = 0.40; // Apply a 40% cost reduction
+            if (cityDistance < 15) { // 50 is the radius used in the pre-calculation
+                const cityFactor = 1; // Apply a 40% cost reduction
                 moveCost *= (1 - cityFactor);
             }
 

@@ -30,18 +30,25 @@ let exploredPixelsBitmap = null; // Use a bitmap for memory efficiency
 let exploredCanvas = null; // Offscreen canvas for explored areas
 let exploredCtx = null;
 
-// Load map image
-const mapImage = new Image();
-mapImage.src = 'data/map.png';
-mapImage.onload = () => {
-    mapWidth = mapCanvas.width = mapImage.width;
-    mapHeight = mapCanvas.height = mapImage.height;
-    animationCanvas.width = mapImage.width;
-    animationCanvas.height = mapImage.height;
-    roadCanvas.width = mapImage.width;
-    roadCanvas.height = mapImage.height;
-    cityCanvas.width = mapImage.width;
-    cityCanvas.height = mapImage.height;
+// Load map images
+const calculationMapImage = new Image();
+calculationMapImage.src = 'data/map.png';
+
+const displayMapImage = new Image();
+displayMapImage.src = 'data/viewmap.png';
+
+const calculationMapPromise = new Promise(resolve => calculationMapImage.onload = resolve);
+const displayMapPromise = new Promise(resolve => displayMapImage.onload = resolve);
+
+Promise.all([calculationMapPromise, displayMapPromise]).then(() => {
+    mapWidth = mapCanvas.width = calculationMapImage.width;
+    mapHeight = mapCanvas.height = calculationMapImage.height;
+    animationCanvas.width = calculationMapImage.width;
+    animationCanvas.height = calculationMapImage.height;
+    roadCanvas.width = calculationMapImage.width;
+    roadCanvas.height = calculationMapImage.height;
+    cityCanvas.width = calculationMapImage.width;
+    cityCanvas.height = calculationMapImage.height;
     
     // Create offscreen canvas for explored areas
     exploredCanvas = new OffscreenCanvas(mapWidth, mapHeight);
@@ -50,8 +57,8 @@ mapImage.onload = () => {
     // Initialize bitmap for tracking explored pixels
     exploredPixelsBitmap = new Uint8Array(mapWidth * mapHeight);
 
-    mapCtx.drawImage(mapImage, 0, 0);
-};
+    mapCtx.drawImage(displayMapImage, 0, 0);
+});
 
 function masterDraw() {
     // A single function to redraw the entire state of all canvases.
@@ -125,7 +132,7 @@ function drawSearchTendrils() {
         animationCtx.fillStyle = 'rgba(255, 255, 0, 0.9)'; // Bright yellow
         
         // Update explored areas on offscreen canvas
-        exploredCtx.fillStyle = 'rgba(100, 200, 100, 0.3)'; // Green tint for explored
+        exploredCtx.fillStyle = 'rgba(255, 97, 97, 0.3)'; // Green tint for explored
         
         tendrilsToDraw.forEach(index => {
             const x = index % mapWidth;
@@ -153,6 +160,7 @@ function drawSearchTendrils() {
 
 function getGradientColor(rank) {
     // Rank 0 is red, ranks 1-9 interpolate from red to black.
+    if (rank === 0) return 'rgb(255, 0, 0)'; // Brightest red for top rank
     const t = rank / 9; // interpolation factor from 0 to 1
     const r = Math.round(255 * (1 - t));
     return `rgb(${r}, 0, 0)`;
@@ -161,21 +169,21 @@ function getGradientColor(rank) {
 function drawAllRoads() {
     roadCtx.clearRect(0, 0, mapWidth, mapHeight);
 
-    // 1. Draw all base paths in grey
+    // 1. Draw all base paths in black and thicker
     allPaths.forEach(path => {
         const pathCoords = path.map(index => ({
             x: index % mapWidth,
             y: Math.floor(index / mapWidth)
         }));
-        roadCtx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-        roadCtx.lineWidth = 1.5;
+        roadCtx.strokeStyle = 'rgba(0, 0, 0, 0.7)'; // Corrected to black
+        roadCtx.lineWidth = 3.0; // Doubled thickness
         roadCtx.beginPath();
         roadCtx.moveTo(pathCoords[0].x, pathCoords[0].y);
         pathCoords.forEach(p => roadCtx.lineTo(p.x, p.y));
         roadCtx.stroke();
     });
 
-    // 2. Draw leaderboard roads on top
+    // 2. Draw leaderboard roads on top, also thicker
     const sortedLeaderboardRoads = leaderboardRoads.sort((a, b) => b.efficiency - a.efficiency);
     
     sortedLeaderboardRoads.slice(0, 10).forEach((road, index) => {
@@ -184,8 +192,8 @@ function drawAllRoads() {
             y: Math.floor(index / mapWidth)
         }));
 
-        roadCtx.strokeStyle = getGradientColor(index);
-        roadCtx.lineWidth = 3.0;
+        roadCtx.strokeStyle = 'rgb(255, 0, 0)'; // All leaderboard roads are now red
+        roadCtx.lineWidth = 6.0; // Doubled thickness
         
         roadCtx.beginPath();
         roadCtx.moveTo(pathCoords[0].x, pathCoords[0].y);
@@ -205,7 +213,7 @@ function updateLeaderboard() {
     leaderboardList.innerHTML = topRoads
         .map((road, index) => {
             const efficiencyGain = road.efficiency * 100;
-            const color = getGradientColor(index);
+            const color = 'rgb(255, 0, 0)'; // All leaderboard text is now red
             const shadow = index === 0 ? '1px 1px 2px rgba(0,0,0,0.7)' : '1px 1px 2px rgba(255,255,255,0.4)';
             return `<li style="color: ${color}; text-shadow: ${shadow};">${road.from} - ${road.to}: +${efficiencyGain.toFixed(1)}%</li>`
         })
@@ -292,8 +300,8 @@ function drawLightning(path) {
 }
 
 function drawPermanentRoad(pathCoords) {
-    roadCtx.strokeStyle = 'rgba(20, 20, 20, 0.7)';
-    roadCtx.lineWidth = 1.5;
+    roadCtx.strokeStyle = 'rgba(0, 0, 0, 0.7)'; // Changed to black
+    roadCtx.lineWidth = 3.0; // Doubled thickness
     roadCtx.beginPath();
     roadCtx.moveTo(pathCoords[0].x, pathCoords[0].y);
     pathCoords.forEach(p => roadCtx.lineTo(p.x, p.y));

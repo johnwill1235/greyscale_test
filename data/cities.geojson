@@ -11,6 +11,7 @@
 { "type": "Feature", "properties": { "city_ascii": "Shenzhen", "lat": 22.5415, "lng": 114.0596, "population": 17619000 }, "geometry": { "type": "Point", "coordinates": [ 114.0596, 22.5415 ] } },
 { "type": "Feature", "properties": { "city_ascii": "Chengdu", "lat": 30.66, "lng": 104.0633, "population": 14645000 }, "geometry": { "type": "Point", "coordinates": [ 104.0633, 30.66 ] } },
 { "type": "Feature", "properties": { "city_ascii": "Xi'an", "lat": 34.2611, "lng": 108.9422, "population": 12328000 }, "geometry": { "type": "Point", "coordinates": [ 108.9422, 34.2611 ] } },
+{ "type": "Feature", "properties": { "city_ascii": "Jiayuguan", "lat": 39.7748, "lng": 98.2884, "population": 2328000 }, "geometry": { "type": "Point", "coordinates": [ 98.2884, 39.7748 ] } },
 { "type": "Feature", "properties": { "city_ascii": "Chongqing", "lat": 29.5637, "lng": 106.5504, "population": 12135000 }, "geometry": { "type": "Point", "coordinates": [ 106.5504, 29.5637 ] } },
 { "type": "Feature", "properties": { "city_ascii": "Linyi", "lat": 35.1038, "lng": 118.3564, "population": 10820000 }, "geometry": { "type": "Point", "coordinates": [ 118.3564, 35.1038 ] } },
 { "type": "Feature", "properties": { "city_ascii": "Dongguan", "lat": 23.021, "lng": 113.752, "population": 10646000 }, "geometry": { "type": "Point", "coordinates": [ 113.752, 23.021 ] } },
