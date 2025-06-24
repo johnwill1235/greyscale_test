@@ -17,6 +17,8 @@ let mapHeight = 0;
 let cities = [];
 let leaderboardRoads = [];
 let allPaths = [];
+let currentStartCityName = null;
+let currentEndCityName = null;
 
 // Animation state
 let animationFrameId;
@@ -63,7 +65,7 @@ function masterDraw() {
         animationCtx.drawImage(exploredCanvas, 0, 0);
     }
     drawAllRoads(); // Redraws permanent roads
-    drawCities();   // Redraws cities
+    drawCities(currentStartCityName, currentEndCityName); // Redraws cities with active highlights
 }
 
 // Listen for tab visibility changes to redraw the canvas.
@@ -264,6 +266,8 @@ function drawLightning(path) {
     function flash() {
         if (flashes >= maxFlashes) {
             animationCtx.clearRect(0, 0, mapWidth, mapHeight);
+            currentStartCityName = null;
+            currentEndCityName = null;
             drawCities(); // Redraw cities to remove highlights
             worker.postMessage({ type: 'readyForNextPath' });
             return;
@@ -307,7 +311,7 @@ worker.onmessage = (e) => {
     const { type, payload } = e.data;
 
     if (type === 'log') {
-        // console.log(`Worker: ${payload}`);
+        console.log(`Worker: ${payload}`);
     } else if (type === 'citiesData') {
         cities = payload;
         drawCities();
@@ -315,6 +319,8 @@ worker.onmessage = (e) => {
         isPathfindingActive = true;
         clearExploredAreas();
         const { from, to } = payload;
+        currentStartCityName = from;
+        currentEndCityName = to;
         drawCities(from, to);
         // Kick off the animation loop
         animationFrameId = requestAnimationFrame(drawSearchTendrils);
@@ -324,7 +330,15 @@ worker.onmessage = (e) => {
         isPathfindingActive = false; // Stop the animation loop
         const { path, startCity, endCity } = payload;
         allPaths.push(path);
-        drawPermanentRoad(path);
+        
+        const pathCoords = path.map(index => ({
+            x: index % mapWidth,
+            y: Math.floor(index / mapWidth)
+        }));
+        
+        drawPermanentRoad(pathCoords);
+        currentStartCityName = startCity.name;
+        currentEndCityName = endCity.name;
         drawCities(startCity.name, endCity.name);
         drawLightning(path);
     } else if (type === 'leaderboardUpdate') {

@@ -284,7 +284,7 @@ function getNeighbors(index, width, height) {
             if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
                 const neighborIndex = ny * width + nx;
                 const isDiagonal = (i !== 0 && j !== 0);
-                neighbors.push({ index: neighborIndex, isDiagonal });
+                neighbors.push({ index: neighborIndex, isDiagonal, i, j });
             }
         }
     }
@@ -356,7 +356,7 @@ async function findPath(startCity, endCity) {
 
     const pq = new PriorityQueue();
     const distances = new Float32Array(width * height).fill(Infinity);
-    const predecessors = new Int32Array(width * height).fill(-1);
+    const predecessors = new Uint8Array(width * height).fill(255); // Use Uint8Array for memory efficiency
     const visited = new Uint8Array(width * height); // More memory efficient than Set - 0 = unvisited, 1 = visited
     
     distances[startIndex] = 0;
@@ -443,9 +443,24 @@ async function findPath(startCity, endCity) {
             // Path found, reconstruct it
             const path = [];
             let current = endIndex;
-            while (current !== -1) {
+            while (true) {
                 path.unshift(current);
-                current = predecessors[current];
+                if (current === startIndex) break;
+
+                const directionCode = predecessors[current];
+                if (directionCode === 255) {
+                    postMessage({ type: 'log', payload: 'Error: Path reconstruction failed!' });
+                    break;
+                }
+
+                // Decode the direction to the predecessor
+                const dx = (directionCode % 3) - 1;
+                const dy = Math.floor(directionCode / 3) - 1;
+                
+                const currentX = current % width;
+                const currentY = Math.floor(current / width);
+                
+                current = (currentY + dy) * width + (currentX + dx);
             }
             
             const geometricPathLength = calculateGeometricLength(path);
@@ -584,7 +599,13 @@ async function findPath(startCity, endCity) {
 
             if (newDist < distances[v]) {
                 distances[v] = newDist;
-                predecessors[v] = u;
+                
+                // Encode the direction to the predecessor instead of the full index
+                const dy = -neighbor.i;
+                const dx = -neighbor.j;
+                const directionCode = (dy + 1) * 3 + (dx + 1);
+                predecessors[v] = directionCode;
+
                 pq.enqueue(v, newDist);
             }
         }
