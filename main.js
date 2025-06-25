@@ -198,7 +198,6 @@ function getGradientColor(rank) {
 function drawAllRoads() {
     roadCtx.clearRect(0, 0, mapWidth, mapHeight);
 
-    // Draw all paths - roads turn red when they reach 30% usage (12 uses)
     allPaths.forEach(pathData => {
         const path = pathData.path || pathData; // Handle both old and new format
         const pathCoords = path.map(index => ({
@@ -206,13 +205,42 @@ function drawAllRoads() {
             y: Math.floor(index / mapWidth)
         }));
         
-        // Check if this road has high usage (30% efficiency = 12 uses)
-        const hasHighUsage = path.some(index => {
+        // Find the maximum usage for this path to determine development level
+        let maxUsage = 0;
+        path.forEach(index => {
             const usage = roadUsageMap.get(index) || 0;
-            return usage >= 12; // 30% efficiency = 12 uses
+            maxUsage = Math.max(maxUsage, usage);
         });
         
-        roadCtx.strokeStyle = hasHighUsage ? 'rgb(255, 0, 0)' : 'rgba(0, 0, 0, 0.7)';
+        // Determine road color based on development level
+        let strokeStyle;
+        if (maxUsage >= 12) {
+            // Fully developed road: transition from 70% opacity brown to 100% opacity black
+            // Assume max development around 30 uses for full transition
+            const developmentLevel = Math.min((maxUsage - 12) / 18, 1); // 0 to 1
+            
+            if (developmentLevel === 0) {
+                // Start of development: 70% opacity brown
+                strokeStyle = 'rgba(139, 69, 19, 0.7)'; // Brown at 70% opacity
+            } else if (developmentLevel >= 1) {
+                // Fully developed: 100% opacity black
+                strokeStyle = 'rgba(0, 0, 0, 1.0)';
+            } else {
+                // Transition: interpolate from brown to black, opacity from 70% to 100%
+                const brown = [139, 69, 19];
+                const black = [0, 0, 0];
+                const r = Math.round(brown[0] * (1 - developmentLevel) + black[0] * developmentLevel);
+                const g = Math.round(brown[1] * (1 - developmentLevel) + black[1] * developmentLevel);
+                const b = Math.round(brown[2] * (1 - developmentLevel) + black[2] * developmentLevel);
+                const opacity = 0.7 + (0.3 * developmentLevel); // 70% to 100%
+                strokeStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+            }
+        } else {
+            // Basic road: keep original low-opacity black
+            strokeStyle = 'rgba(0, 0, 0, 0.7)';
+        }
+        
+        roadCtx.strokeStyle = strokeStyle;
         roadCtx.lineWidth = 1.5; // Half thickness (was 3.0)
         roadCtx.beginPath();
         roadCtx.moveTo(pathCoords[0].x, pathCoords[0].y);
