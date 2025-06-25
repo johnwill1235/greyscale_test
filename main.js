@@ -3,7 +3,7 @@ const mapCanvas = document.getElementById('map-canvas');
 const animationCanvas = document.getElementById('animation-canvas');
 const roadCanvas = document.getElementById('road-canvas');
 const cityCanvas = document.getElementById('city-canvas');
-const leaderboardList = document.getElementById('leaderboard-list');
+
 
 const mapCtx = mapCanvas.getContext('2d');
 const animationCtx = animationCanvas.getContext('2d');
@@ -15,8 +15,8 @@ const worker = new Worker('worker.js');
 let mapWidth = 0;
 let mapHeight = 0;
 let cities = [];
-let leaderboardRoads = [];
-let allPaths = [];
+let allPaths = []; // Array of {path: [], usageData: Map}
+let roadUsageMap = new Map(); // Global usage tracking for all roads
 let currentStartCityName = null;
 let currentEndCityName = null;
 
@@ -57,7 +57,8 @@ Promise.all([calculationMapPromise, displayMapPromise]).then(() => {
     // Initialize bitmap for tracking explored pixels
     exploredPixelsBitmap = new Uint8Array(mapWidth * mapHeight);
 
-    mapCtx.drawImage(displayMapImage, 0, 0);
+    // Scale the viewmap to match the calculation map size
+    mapCtx.drawImage(displayMapImage, 0, 0, mapWidth, mapHeight);
 });
 
 function masterDraw() {
@@ -100,7 +101,6 @@ window.addEventListener('load', () => {
     currentStartCityName = null;
     currentEndCityName = null;
     allPaths = [];
-    leaderboardRoads = [];
     
     // Clear explored areas
     if (exploredPixelsBitmap) {
@@ -117,8 +117,8 @@ function drawCities(activeCity1Name = null, activeCity2Name = null) {
     cities.forEach(city => {
         const isActive = city.name === activeCity1Name || city.name === activeCity2Name;
 
-        // Much larger cities: 12px normal, 24px for active
-        const radius = isActive ? 24 : 12;
+        // Smaller cities: 6px normal, 12px for active
+        const radius = isActive ? 12 : 6;
         
         cityCtx.beginPath();
         cityCtx.arc(city.x, city.y, radius, 0, Math.PI * 2);
@@ -127,12 +127,12 @@ function drawCities(activeCity1Name = null, activeCity2Name = null) {
         
         // Add black border for better visibility
         cityCtx.strokeStyle = 'black';
-        cityCtx.lineWidth = isActive ? 3 : 2;
+        cityCtx.lineWidth = isActive ? 2 : 1;
         cityCtx.stroke();
         
-        // Much larger font for city names
+        // Smaller font for city names
         cityCtx.fillStyle = 'black';
-        cityCtx.font = isActive ? 'bold 24px sans-serif' : '20px sans-serif';
+        cityCtx.font = isActive ? 'bold 14px sans-serif' : '12px sans-serif';
         cityCtx.fillText(city.name, city.x + radius + 6, city.y + 6);
     });
 
@@ -198,32 +198,22 @@ function getGradientColor(rank) {
 function drawAllRoads() {
     roadCtx.clearRect(0, 0, mapWidth, mapHeight);
 
-    // 1. Draw all base paths in black and thicker
-    allPaths.forEach(path => {
+    // Draw all paths - roads turn red when they reach 30% usage (12 uses)
+    allPaths.forEach(pathData => {
+        const path = pathData.path || pathData; // Handle both old and new format
         const pathCoords = path.map(index => ({
             x: index % mapWidth,
             y: Math.floor(index / mapWidth)
         }));
-        roadCtx.strokeStyle = 'rgba(0, 0, 0, 0.7)'; // Corrected to black
-        roadCtx.lineWidth = 3.0; // Doubled thickness
-        roadCtx.beginPath();
-        roadCtx.moveTo(pathCoords[0].x, pathCoords[0].y);
-        pathCoords.forEach(p => roadCtx.lineTo(p.x, p.y));
-        roadCtx.stroke();
-    });
-
-    // 2. Draw leaderboard roads on top, also thicker
-    const sortedLeaderboardRoads = leaderboardRoads.sort((a, b) => b.efficiency - a.efficiency);
-    
-    sortedLeaderboardRoads.slice(0, 10).forEach((road, index) => {
-        const pathCoords = road.path.map(index => ({
-            x: index % mapWidth,
-            y: Math.floor(index / mapWidth)
-        }));
-
-        roadCtx.strokeStyle = 'rgb(255, 0, 0)'; // All leaderboard roads are now red
-        roadCtx.lineWidth = 6.0; // Doubled thickness
         
+        // Check if this road has high usage (30% efficiency = 12 uses)
+        const hasHighUsage = path.some(index => {
+            const usage = roadUsageMap.get(index) || 0;
+            return usage >= 12; // 30% efficiency = 12 uses
+        });
+        
+        roadCtx.strokeStyle = hasHighUsage ? 'rgb(255, 0, 0)' : 'rgba(0, 0, 0, 0.7)';
+        roadCtx.lineWidth = 1.5; // Half thickness (was 3.0)
         roadCtx.beginPath();
         roadCtx.moveTo(pathCoords[0].x, pathCoords[0].y);
         pathCoords.forEach(p => roadCtx.lineTo(p.x, p.y));
@@ -231,51 +221,7 @@ function drawAllRoads() {
     });
 }
 
-function updateLeaderboard() {
-    // Sort roads by efficiency (higher is better)
-    const sortedRoads = leaderboardRoads.sort((a, b) => b.efficiency - a.efficiency);
 
-    // Take top 10
-    const topRoads = sortedRoads.slice(0, 10);
-
-    // Generate HTML
-    leaderboardList.innerHTML = topRoads
-        .map((road, index) => {
-            const efficiencyGain = road.efficiency * 100;
-            const color = 'rgb(255, 0, 0)'; // All leaderboard text is now red
-            const shadow = index === 0 ? '1px 1px 2px rgba(0,0,0,0.7)' : '1px 1px 2px rgba(255,255,255,0.4)';
-            return `<li style="color: ${color}; text-shadow: ${shadow};">${road.from} - ${road.to}: +${efficiencyGain.toFixed(1)}%</li>`
-        })
-        .join('');
-    
-    drawAllRoads();
-}
-
-function addOrUpdateLeaderboardRoad(roadData) {
-    const { startCity, endCity, efficiency, path } = roadData;
-    const from = startCity.name;
-    const to = endCity.name;
-
-    // Normalize city names to create a unique ID
-    const roadId = [from, to].sort().join('-');
-
-    const existingRoad = leaderboardRoads.find(r => r.id === roadId);
-
-    if (existingRoad) {
-        existingRoad.efficiency = efficiency;
-        existingRoad.path = path;
-    } else {
-        leaderboardRoads.push({
-            id: roadId,
-            from: from,
-            to: to,
-            efficiency: efficiency,
-            path: path
-        });
-    }
-
-    updateLeaderboard();
-}
 
 function clearExploredAreas() {
     if (exploredPixelsBitmap) {
@@ -334,7 +280,7 @@ function drawLightning(path) {
 
 function drawPermanentRoad(pathCoords) {
     roadCtx.strokeStyle = 'rgba(0, 0, 0, 0.7)'; // Changed to black
-    roadCtx.lineWidth = 3.0; // Doubled thickness
+    roadCtx.lineWidth = 1.5; // Half thickness
     roadCtx.beginPath();
     roadCtx.moveTo(pathCoords[0].x, pathCoords[0].y);
     pathCoords.forEach(p => roadCtx.lineTo(p.x, p.y));
@@ -365,8 +311,7 @@ startButton.addEventListener('click', () => {
     
     // Reset road data
     allPaths = [];
-    leaderboardRoads = [];
-    leaderboardList.innerHTML = '';
+    roadUsageMap.clear();
     
     // Redraw base state
     drawCities();
@@ -394,10 +339,17 @@ worker.onmessage = (e) => {
         animationFrameId = requestAnimationFrame(drawSearchTendrils);
     } else if (type === 'pathfindingUpdate') {
         tendrilsToDraw.push(...payload);
-    } else if (type === 'pathFound') {
+        } else if (type === 'pathFound') {
         isPathfindingActive = false; // Stop the animation loop
-        const { path, startCity, endCity } = payload;
+        const { path, pathWithUsage, startCity, endCity } = payload;
         allPaths.push(path);
+        
+        // Update global usage map if we have usage data
+        if (pathWithUsage) {
+            pathWithUsage.forEach(({index, usage}) => {
+                roadUsageMap.set(index, usage + 1); // Add 1 for the new path
+            });
+        }
         
         const pathCoords = path.map(index => ({
             x: index % mapWidth,
@@ -409,14 +361,6 @@ worker.onmessage = (e) => {
         currentEndCityName = endCity.name;
         drawCities(startCity.name, endCity.name);
         drawLightning(path);
-    } else if (type === 'leaderboardUpdate') {
-        const roadData = {
-            startCity: payload.startCity,
-            endCity: payload.endCity,
-            efficiency: payload.efficiency,
-            path: payload.path,
-        };
-        addOrUpdateLeaderboardRoad(roadData);
     }
 };
 

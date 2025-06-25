@@ -171,7 +171,7 @@ function createCostGrid() {
     });
 
     let head = 0;
-    const searchRadius = 50; // Same radius as the old getNearbyCity
+    const searchRadius = 15; // Same radius as the old getNearbyCity
     while (head < queue.length) {
         const u = queue[head++];
         const u_dist = cityInfluenceGrid[u];
@@ -356,7 +356,7 @@ async function findPath(startCity, endCity) {
 
     const pq = new PriorityQueue();
     const distances = new Float32Array(width * height).fill(Infinity);
-    const predecessors = new Uint8Array(width * height).fill(255); // Use Uint8Array for memory efficiency
+    const predecessors = new Int32Array(width * height).fill(-1); // Simple index storage - much more efficient
     const visited = new Uint8Array(width * height); // More memory efficient than Set - 0 = unvisited, 1 = visited
     
     distances[startIndex] = 0;
@@ -383,17 +383,7 @@ async function findPath(startCity, endCity) {
     let stuckCounter = 0; // Count how many times we haven't made progress
     let smoothedQueueSize = 0; // Smoothed queue size to prevent jumpiness
     
-    // Dynamic iteration limit based on distance
-    const baseMaxIterations = width * height;
-    const distanceMultiplier = Math.min(5, Math.max(1, straightLineDistance / 1000));
-    const maxIterations = Math.floor(baseMaxIterations * distanceMultiplier);
-    
     const startTime = performance.now();
-    
-    postMessage({ 
-        type: 'log', 
-        payload: `📊 Pathfinding limits: Max iterations: ${maxIterations.toLocaleString()} (${distanceMultiplier.toFixed(1)}x base) | Distance factor: ${straightLineDistance > 1000 ? 'LONG' : 'NORMAL'}` 
-    });
 
     while (!pq.isEmpty()) {
         const u = pq.dequeue();
@@ -406,11 +396,7 @@ async function findPath(startCity, endCity) {
         visited[u] = 1;
         visitedCount++;
 
-        // Safety check to prevent infinite loops
-        if (count > maxIterations) {
-            postMessage({ type: 'log', payload: `Pathfinding stopped: exceeded maximum iterations (${maxIterations})` });
-            break;
-        }
+
 
         // Regular step logging for debugging
         if (count % 50000 === 0) { // Reduced frequency of this log
@@ -443,24 +429,9 @@ async function findPath(startCity, endCity) {
             // Path found, reconstruct it
             const path = [];
             let current = endIndex;
-            while (true) {
+            while (current !== -1) {
                 path.unshift(current);
-                if (current === startIndex) break;
-
-                const directionCode = predecessors[current];
-                if (directionCode === 255) {
-                    postMessage({ type: 'log', payload: 'Error: Path reconstruction failed!' });
-                    break;
-                }
-
-                // Decode the direction to the predecessor
-                const dx = (directionCode % 3) - 1;
-                const dy = Math.floor(directionCode / 3) - 1;
-                
-                const currentX = current % width;
-                const currentY = Math.floor(current / width);
-                
-                current = (currentY + dy) * width + (currentX + dx);
+                current = predecessors[current];
             }
             
             const geometricPathLength = calculateGeometricLength(path);
@@ -487,27 +458,48 @@ async function findPath(startCity, endCity) {
         count++;
         processedCount++;
 
-        // Regular, lightweight yield to prevent blocking the event loop on very fast paths.
-        if (processedCount % 10000 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 0));
+        // Smooth queue size tracking to prevent jumpy behavior
+        const queueSize = pq.heap.length;
+        smoothedQueueSize = smoothedQueueSize * 0.95 + queueSize * 0.05; // Exponential smoothing
+        
+        // Monitor queue size for performance issues
+        if (!queueSizeWarning && smoothedQueueSize > 50000) {
+            postMessage({ type: 'log', payload: `Large queue detected (avg: ${Math.floor(smoothedQueueSize)} items) - encountering high-cost terrain` });
+            queueSizeWarning = true;
         }
 
-        // Dynamic update frequency that increases as the search progresses, making the visualization faster over time.
-        const baseFrequency = isLongDistance ? 8000 : 2000;
-        const growthRate = 0.001; // Determines how quickly the batch size grows.
-        let updateFrequency = baseFrequency + Math.floor(processedCount * growthRate);
+        // Smooth adaptive speedup based on processed count with gentle queue influence
+        let baseUpdateFrequency;
+        
+        if (processedCount < 2000) {
+            baseUpdateFrequency = isLongDistance ? 300 : 150;
+        } else if (processedCount < 10000) {
+            const increment = isLongDistance ? 50 : 25;
+            baseUpdateFrequency = (isLongDistance ? 300 : 150) + Math.floor((processedCount - 2000) / increment);
+        } else if (processedCount < 50000) {
+            const increment = isLongDistance ? 60 : 120;
+            const base = isLongDistance ? 940 : 470;
+            baseUpdateFrequency = base + Math.floor((processedCount - 10000) / increment);
+        } else {
+            const increment = isLongDistance ? 150 : 300;
+            const base = isLongDistance ? 1600 : 800;
+            const maxFreq = isLongDistance ? 3000 : 1500;
+            baseUpdateFrequency = Math.min(maxFreq, base + Math.floor((processedCount - 50000) / increment));
+        }
+        
+        // Gentle queue-based adjustment
+        const queueInfluence = Math.min(2, smoothedQueueSize / 50000);
+        const currentUpdateFrequency = Math.floor(baseUpdateFrequency * (1 + queueInfluence));
 
-        // Cap the frequency to prevent enormous batches that could freeze the UI.
-        const maxFrequency = isLongDistance ? 100000 : 50000;
-        updateFrequency = Math.min(updateFrequency, maxFrequency);
-
-        if (visitedForUpdate.length >= updateFrequency) {
+        if (count - lastUpdateCount >= currentUpdateFrequency) {
             postMessage({ type: 'pathfindingUpdate', payload: visitedForUpdate.slice() });
-            visitedForUpdate.length = 0; // Clear the array for the next batch
+            visitedForUpdate.length = 0;
             lastUpdateCount = count;
             
-            // Yield to the event loop to keep the UI responsive, especially during long calculations.
-            await new Promise(resolve => setTimeout(resolve, 0));
+            // Smooth yielding based on processing phase
+            if (processedCount < 20000 || count % 4 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
         }
 
         const uDist = distances[u];
@@ -580,7 +572,7 @@ async function findPath(startCity, endCity) {
             // Step 3: Apply a "city buff" using the pre-calculated influence grid.
             const cityDistance = cityInfluenceGrid[v];
             if (cityDistance < 15) { // 50 is the radius used in the pre-calculation
-                const cityFactor = 1; // Apply a 40% cost reduction
+                const cityFactor = 0.8; // Apply a 40% cost reduction
                 moveCost *= (1 - cityFactor);
             }
 
@@ -599,28 +591,13 @@ async function findPath(startCity, endCity) {
 
             if (newDist < distances[v]) {
                 distances[v] = newDist;
-                
-                // Encode the direction to the predecessor instead of the full index
-                const dy = -neighbor.i;
-                const dx = -neighbor.j;
-                const directionCode = (dy + 1) * 3 + (dx + 1);
-                predecessors[v] = directionCode;
-
+                predecessors[v] = u;
                 pq.enqueue(v, newDist);
             }
         }
     }
 
-    // Enhanced failure logging
-    const endTime = performance.now();
-    const totalTime = (endTime - startTime).toFixed(2);
-    const reasonText = count >= maxIterations ? "iteration limit reached" : "queue exhausted";
-    
-    postMessage({ 
-        type: 'log', 
-        payload: `❌ No path found! ${startCity.name} → ${endCity.name} | Reason: ${reasonText} | Steps: ${count.toLocaleString()} | Processed: ${processedCount.toLocaleString()} | Time: ${totalTime}ms | Visited: ${visitedCount.toLocaleString()}` 
-    });
-    return null;
+    // This should never be reached since paths always exist
 }
 
 function updateCostGridWithRoad(path) {
@@ -705,9 +682,24 @@ async function simulationLoop() {
 
             if (result) {
                 const {path, efficiency} = result;
-                postMessage({ type: 'pathFound', payload: { path, startCity, endCity, efficiency } });
+                
+                // Get usage data for each pixel in the path
+                const pathWithUsage = path.map(pixelIndex => ({
+                    index: pixelIndex,
+                    usage: state.map.roadUsageGrid[pixelIndex] || 0
+                }));
+                
+                postMessage({ 
+                    type: 'pathFound', 
+                    payload: { 
+                        path, 
+                        pathWithUsage,
+                        startCity, 
+                        endCity, 
+                        efficiency 
+                    } 
+                });
                 updateCostGridWithRoad(path);
-                analyzePathForSegments(path);
             }
         } else {
              // If no cities, just wait a bit
@@ -716,56 +708,7 @@ async function simulationLoop() {
     }
 }
 
-function analyzePathForSegments(path) {
-    const { roadUsageGrid } = state.map;
-    let currentSegment = [];
 
-    for (let i = 0; i < path.length; i++) {
-        const pixel = path[i];
-        if (roadUsageGrid[pixel] >= 2) {
-            currentSegment.push(pixel);
-        }
-
-        // If the chain is broken or we're at the end of the path, process the segment
-        if ((roadUsageGrid[pixel] < 2 || i === path.length - 1)) {
-            if (currentSegment.length > 20) { // Segments must be of a minimum length
-                const startPixel = currentSegment[0];
-                const endPixel = currentSegment[currentSegment.length - 1];
-
-                const city1 = findNearestCity(startPixel);
-                const city2 = findNearestCity(endPixel);
-
-                if (city1 && city2 && city1.name !== city2.name) {
-                    const straightLineDistance = Math.sqrt((city2.x - city1.x) ** 2 + (city2.y - city1.y) ** 2);
-                    
-                    if (straightLineDistance > 10) { // Prevent segments between very close cities
-                        
-                        let totalEfficiencyGain = 0;
-                        currentSegment.forEach(pixelIndex => {
-                            const usageCount = roadUsageGrid[pixelIndex];
-                            const maxUses = 12; // Max 30%
-                            const actualUses = Math.min(usageCount, maxUses);
-                            totalEfficiencyGain += (actualUses * 0.025);
-                        });
-                        const averageEfficiencyGain = totalEfficiencyGain / currentSegment.length;
-
-                        postMessage({
-                            type: 'leaderboardUpdate',
-                            payload: {
-                                startCity: city1,
-                                endCity: city2,
-                                efficiency: averageEfficiencyGain,
-                                path: currentSegment
-                            }
-                        });
-                    }
-                }
-            }
-            // Reset for next segment
-            currentSegment = [];
-        }
-    }
-}
 
 self.onmessage = (e) => {
     const { type } = e.data;
