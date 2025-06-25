@@ -49,16 +49,4 @@ canvas {
     margin: 0;
 }
 
-#leaderboard {
-    margin-top: 20px;
-}
-
-#leaderboard-list {
-    padding-left: 20px;
-    margin: 0;
-}
-
-#leaderboard-list li {
-    font-weight: bold;
-    padding: 2px 0;
-} 
+ 
