@@ -356,7 +356,8 @@ worker.onmessage = (e) => {
             y: Math.floor(index / mapWidth)
         }));
         
-        drawPermanentRoad(pathCoords);
+        // Redraw ALL roads to update colors based on new usage data
+        drawAllRoads();
         currentStartCityName = startCity.name;
         currentEndCityName = endCity.name;
         drawCities(startCity.name, endCity.name);

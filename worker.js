@@ -174,7 +174,7 @@ function createCostGrid() {
     });
 
     let head = 0;
-    const searchRadius = 15; // Same radius as the old getNearbyCity
+    const searchRadius = 5; // Same radius as the old getNearbyCity
     while (head < queue.length) {
         const u = queue[head++];
         const u_dist = cityInfluenceGrid[u];
