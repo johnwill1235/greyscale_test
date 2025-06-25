@@ -22,6 +22,9 @@ const state = {
     minPopulation: 0,
     maxPopulation: 0,
     pgw: null,
+    // FPS control
+    targetFPS: 120,
+    lastFrameTime: 0,
 };
 
 function parsePgw(text) {
@@ -468,36 +471,28 @@ async function findPath(startCity, endCity) {
             queueSizeWarning = true;
         }
 
-        // Smooth adaptive speedup based on processed count with gentle queue influence
-        let baseUpdateFrequency;
+        // Linear increase in update frequency
+        const baseUpdateFrequency = isLongDistance ? 200 : 100;
+        const linearIncrement = isLongDistance ? 2 : 1;
+        const maxUpdateFrequency = isLongDistance ? 2000 : 1000;
         
-        if (processedCount < 2000) {
-            baseUpdateFrequency = isLongDistance ? 300 : 150;
-        } else if (processedCount < 10000) {
-            const increment = isLongDistance ? 50 : 25;
-            baseUpdateFrequency = (isLongDistance ? 300 : 150) + Math.floor((processedCount - 2000) / increment);
-        } else if (processedCount < 50000) {
-            const increment = isLongDistance ? 60 : 120;
-            const base = isLongDistance ? 940 : 470;
-            baseUpdateFrequency = base + Math.floor((processedCount - 10000) / increment);
-        } else {
-            const increment = isLongDistance ? 150 : 300;
-            const base = isLongDistance ? 1600 : 800;
-            const maxFreq = isLongDistance ? 3000 : 1500;
-            baseUpdateFrequency = Math.min(maxFreq, base + Math.floor((processedCount - 50000) / increment));
-        }
-        
-        // Gentle queue-based adjustment
-        const queueInfluence = Math.min(2, smoothedQueueSize / 50000);
-        const currentUpdateFrequency = Math.floor(baseUpdateFrequency * (1 + queueInfluence));
+        const currentUpdateFrequency = Math.min(
+            maxUpdateFrequency, 
+            baseUpdateFrequency + Math.floor(processedCount / 1000) * linearIncrement
+        );
 
         if (count - lastUpdateCount >= currentUpdateFrequency) {
-            postMessage({ type: 'pathfindingUpdate', payload: visitedForUpdate.slice() });
-            visitedForUpdate.length = 0;
-            lastUpdateCount = count;
+            const currentTime = performance.now();
+            const frameDelay = 1000 / state.targetFPS;
             
-            // Smooth yielding based on processing phase
-            if (processedCount < 20000 || count % 4 === 0) {
+            // Only send update if enough time has passed for target FPS
+            if (currentTime - state.lastFrameTime >= frameDelay) {
+                postMessage({ type: 'pathfindingUpdate', payload: visitedForUpdate.slice() });
+                visitedForUpdate.length = 0;
+                lastUpdateCount = count;
+                state.lastFrameTime = currentTime;
+                
+                // Wait for next frame to maintain target FPS
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
         }
@@ -667,6 +662,8 @@ async function simulationLoop() {
 
     let isFirstPath = true;
     while(true) {
+        const loopStartTime = performance.now();
+        
         if (!isFirstPath) {
             await waitForNextPath();
         }
@@ -704,6 +701,13 @@ async function simulationLoop() {
         } else {
              // If no cities, just wait a bit
              await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        // Ensure minimum delay between simulation cycles to maintain reasonable speed
+        const loopDuration = performance.now() - loopStartTime;
+        const minCycleTime = 100; // Minimum 100ms between new paths
+        if (loopDuration < minCycleTime) {
+            await new Promise(resolve => setTimeout(resolve, minCycleTime - loopDuration));
         }
     }
 }
