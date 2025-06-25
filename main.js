@@ -15,7 +15,7 @@ const worker = new Worker('worker.js');
 let mapWidth = 0;
 let mapHeight = 0;
 let cities = [];
-let allPaths = []; // Array of {path: [], usageData: Map}
+let allPaths = []; // Array of {path: [], usageData: Map, maxUsage: number, strokeStyle: string}
 let roadUsageMap = new Map(); // Global usage tracking for all roads
 let currentStartCityName = null;
 let currentEndCityName = null;
@@ -195,56 +195,80 @@ function getGradientColor(rank) {
     return `rgb(${r}, 0, 0)`;
 }
 
-function drawAllRoads() {
-    roadCtx.clearRect(0, 0, mapWidth, mapHeight);
+function calculateStrokeStyle(maxUsage) {
+    if (maxUsage >= 12) {
+        // Fully developed road: transition from 70% opacity brown to 100% opacity black
+        // Assume max development around 30 uses for full transition
+        const developmentLevel = Math.min((maxUsage - 12) / 18, 1); // 0 to 1
+        
+        if (developmentLevel === 0) {
+            // Start of development: 70% opacity brown
+            return 'rgba(139, 69, 19, 0.7)'; // Brown at 70% opacity
+        } else if (developmentLevel >= 1) {
+            // Fully developed: 100% opacity black
+            return 'rgba(0, 0, 0, 1.0)';
+        } else {
+            // Transition: interpolate from brown to black, opacity from 70% to 100%
+            const brown = [139, 69, 19];
+            const black = [0, 0, 0];
+            const r = Math.round(brown[0] * (1 - developmentLevel) + black[0] * developmentLevel);
+            const g = Math.round(brown[1] * (1 - developmentLevel) + black[1] * developmentLevel);
+            const b = Math.round(brown[2] * (1 - developmentLevel) + black[2] * developmentLevel);
+            const opacity = 0.7 + (0.3 * developmentLevel); // 70% to 100%
+            return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+        }
+    } else {
+        // Basic road: keep original low-opacity black
+        return 'rgba(0, 0, 0, 0.7)';
+    }
+}
 
+function updatePathColors() {
+    // Only recalculate colors for paths that might have changed
     allPaths.forEach(pathData => {
         const path = pathData.path || pathData; // Handle both old and new format
-        const pathCoords = path.map(index => ({
-            x: index % mapWidth,
-            y: Math.floor(index / mapWidth)
-        }));
         
-        // Find the maximum usage for this path to determine development level
+        // Find the maximum usage for this path
         let maxUsage = 0;
         path.forEach(index => {
             const usage = roadUsageMap.get(index) || 0;
             maxUsage = Math.max(maxUsage, usage);
         });
         
-        // Determine road color based on development level
-        let strokeStyle;
-        if (maxUsage >= 12) {
-            // Fully developed road: transition from 70% opacity brown to 100% opacity black
-            // Assume max development around 30 uses for full transition
-            const developmentLevel = Math.min((maxUsage - 12) / 18, 1); // 0 to 1
-            
-            if (developmentLevel === 0) {
-                // Start of development: 70% opacity brown
-                strokeStyle = 'rgba(139, 69, 19, 0.7)'; // Brown at 70% opacity
-            } else if (developmentLevel >= 1) {
-                // Fully developed: 100% opacity black
-                strokeStyle = 'rgba(0, 0, 0, 1.0)';
-            } else {
-                // Transition: interpolate from brown to black, opacity from 70% to 100%
-                const brown = [139, 69, 19];
-                const black = [0, 0, 0];
-                const r = Math.round(brown[0] * (1 - developmentLevel) + black[0] * developmentLevel);
-                const g = Math.round(brown[1] * (1 - developmentLevel) + black[1] * developmentLevel);
-                const b = Math.round(brown[2] * (1 - developmentLevel) + black[2] * developmentLevel);
-                const opacity = 0.7 + (0.3 * developmentLevel); // 70% to 100%
-                strokeStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
-            }
-        } else {
-            // Basic road: keep original low-opacity black
-            strokeStyle = 'rgba(0, 0, 0, 0.7)';
+        // Only update if maxUsage changed
+        if (pathData.maxUsage !== maxUsage) {
+            pathData.maxUsage = maxUsage;
+            pathData.strokeStyle = calculateStrokeStyle(maxUsage);
         }
+    });
+}
+
+function drawAllRoads() {
+    roadCtx.clearRect(0, 0, mapWidth, mapHeight);
+
+    allPaths.forEach(pathData => {
+        const path = pathData.path || pathData; // Handle both old and new format
+        
+        // Use cached stroke style if available
+        const strokeStyle = pathData.strokeStyle || 'rgba(0, 0, 0, 0.7)';
         
         roadCtx.strokeStyle = strokeStyle;
-        roadCtx.lineWidth = 1.5; // Half thickness (was 3.0)
+        roadCtx.lineWidth = 1.5;
         roadCtx.beginPath();
-        roadCtx.moveTo(pathCoords[0].x, pathCoords[0].y);
-        pathCoords.forEach(p => roadCtx.lineTo(p.x, p.y));
+        
+        // Convert path to coordinates and draw
+        let isFirst = true;
+        path.forEach(index => {
+            const x = index % mapWidth;
+            const y = Math.floor(index / mapWidth);
+            if (isFirst) {
+                roadCtx.moveTo(x, y);
+                isFirst = false;
+            } else {
+                roadCtx.lineTo(x, y);
+            }
+        });
+        
         roadCtx.stroke();
     });
 }
@@ -370,7 +394,14 @@ worker.onmessage = (e) => {
         } else if (type === 'pathFound') {
         isPathfindingActive = false; // Stop the animation loop
         const { path, pathWithUsage, startCity, endCity } = payload;
-        allPaths.push(path);
+        
+        // Create path object with initial styling
+        const pathObj = {
+            path: path,
+            maxUsage: 0,
+            strokeStyle: 'rgba(0, 0, 0, 0.7)' // Default style
+        };
+        allPaths.push(pathObj);
         
         // Update global usage map if we have usage data
         if (pathWithUsage) {
@@ -379,13 +410,12 @@ worker.onmessage = (e) => {
             });
         }
         
-        const pathCoords = path.map(index => ({
-            x: index % mapWidth,
-            y: Math.floor(index / mapWidth)
-        }));
+        // Only update colors for paths that might have changed usage
+        updatePathColors();
         
-        // Redraw ALL roads to update colors based on new usage data
+        // Redraw roads with updated colors
         drawAllRoads();
+        
         currentStartCityName = startCity.name;
         currentEndCityName = endCity.name;
         drawCities(startCity.name, endCity.name);
