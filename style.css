@@ -63,12 +63,136 @@ canvas {
     padding: 10px 20px;
     font-size: 16px;
     cursor: pointer;
-    margin: 0;
+    margin: 0 0 20px 0;
     width: 100%;
     background-color: #007bff;
     color: white;
     border: none;
     border-radius: 4px;
+}
+
+/* Leaderboard Styles */
+#leaderboard-section {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #ddd;
+}
+
+#leaderboard-section h2 {
+    margin: 0 0 5px 0;
+    font-size: 18px;
+    color: #333;
+}
+
+.leaderboard-description {
+    margin: 0 0 10px 0;
+    font-size: 12px;
+    color: #666;
+    font-style: italic;
+}
+
+#leaderboard-container {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: rgba(248, 249, 250, 0.9);
+}
+
+#leaderboard-empty {
+    padding: 15px;
+    text-align: center;
+    color: #666;
+    font-size: 14px;
+}
+
+#leaderboard-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: leaderboard-counter;
+}
+
+#leaderboard-list li {
+    padding: 8px 15px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    counter-increment: leaderboard-counter;
+    position: relative;
+}
+
+#leaderboard-list li:last-child {
+    border-bottom: none;
+}
+
+#leaderboard-list li:nth-child(-n+3) {
+    background-color: rgba(255, 215, 0, 0.1); /* Golden tint for top 3 */
+}
+
+#leaderboard-list li:before {
+    content: counter(leaderboard-counter);
+    background-color: #007bff;
+    color: white;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+#leaderboard-list li:nth-child(1):before {
+    background-color: #ffd700; /* Gold */
+    color: #333;
+}
+
+#leaderboard-list li:nth-child(2):before {
+    background-color: #c0c0c0; /* Silver */
+    color: #333;
+}
+
+#leaderboard-list li:nth-child(3):before {
+    background-color: #cd7f32; /* Bronze */
+    color: white;
+}
+
+.leaderboard-city-name {
+    flex-grow: 1;
+    font-weight: 500;
+    font-size: 14px;
+    color: #333;
+}
+
+.leaderboard-count {
+    background-color: #e9ecef;
+    color: #495057;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    min-width: 30px;
+    text-align: center;
+}
+
+.leaderboard-count.high-traffic {
+    background-color: #dc3545;
+    color: white;
+}
+
+.leaderboard-count.medium-traffic {
+    background-color: #ffc107;
+    color: #333;
+}
+
+.leaderboard-count.low-traffic {
+    background-color: #28a745;
+    color: white;
 }
 
  

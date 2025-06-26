@@ -579,9 +579,9 @@ async function findPath(startCity, endCity) {
             // Step 2: If a road exists, apply an efficiency discount.
             const usageCount = roadUsageGrid[v];
             if (usageCount > 0) {
-                const maxUses = 12; // 12 * 2.5% = 30%
+                const maxUses = 48; // 12 * 2.5% = 30%
                 const actualUses = Math.min(usageCount, maxUses);
-                const efficiency = actualUses * 0.025; // 0.025 to 0.30
+                const efficiency = actualUses * 0.00625; // 0.025 to 0.30
                 moveCost *= (1 - efficiency); // Apply discount
             }
 

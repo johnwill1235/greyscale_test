@@ -22,6 +22,9 @@ let currentStartCityName = null;
 let currentEndCityName = null;
 let currentRegion = 'china'; // Default region
 
+// City visit tracking for leaderboard
+let cityVisitCounts = new Map(); // Track how many times each city has been visited
+
 // Animation state
 let animationFrameId;
 let tendrilsToDraw = [];
@@ -180,6 +183,10 @@ regionSelect.addEventListener('change', () => {
     roadUsageMap.clear();
     cities = [];
     
+    // Clear city visit tracking for the new region
+    cityVisitCounts.clear();
+    updateLeaderboard();
+    
     // Clear all canvases
     if (mapWidth && mapHeight) {
         roadCtx.clearRect(0, 0, mapWidth, mapHeight);
@@ -203,6 +210,135 @@ regionSelect.addEventListener('change', () => {
         startButton.disabled = false; // Enable anyway so user can try
     });
 });
+
+// City visit tracking functions
+function trackCityVisit(cityName) {
+    if (!cityName) return;
+    
+    const currentCount = cityVisitCounts.get(cityName) || 0;
+    cityVisitCounts.set(cityName, currentCount + 1);
+    
+    console.log(`City visit tracked: ${cityName} (${currentCount + 1} times)`);
+    updateLeaderboard();
+}
+
+function trackCitiesAlongPath(path) {
+    if (!path || !cities || cities.length === 0 || !mapWidth) return;
+    
+    // Convert path indices to coordinates and check which cities are passed through
+    const passedThroughCities = new Set(); // Use Set to avoid counting same city multiple times per path
+    const proximityThreshold = 15; // Distance threshold to consider a city "passed through"
+    
+    // Sample the path at regular intervals to avoid checking every single pixel
+    const sampleInterval = Math.max(1, Math.floor(path.length / 100)); // Sample ~100 points along the path
+    
+    for (let i = 0; i < path.length; i += sampleInterval) {
+        const pixelIndex = path[i];
+        const pathX = pixelIndex % mapWidth;
+        const pathY = Math.floor(pixelIndex / mapWidth);
+        
+        // Check distance to each city
+        for (const city of cities) {
+            const cityX = Math.round(city.x);
+            const cityY = Math.round(city.y);
+            
+            // Calculate distance between path point and city
+            const distance = Math.sqrt(
+                Math.pow(pathX - cityX, 2) + Math.pow(pathY - cityY, 2)
+            );
+            
+            // If path passes close enough to city, count it
+            if (distance <= proximityThreshold) {
+                passedThroughCities.add(city.name);
+            }
+        }
+    }
+    
+    // Also check the exact start and end points of the path
+    if (path.length > 0) {
+        // Check start point
+        const startIndex = path[0];
+        const startX = startIndex % mapWidth;
+        const startY = Math.floor(startIndex / mapWidth);
+        
+        // Check end point
+        const endIndex = path[path.length - 1];
+        const endX = endIndex % mapWidth;
+        const endY = Math.floor(endIndex / mapWidth);
+        
+        for (const city of cities) {
+            const cityX = Math.round(city.x);
+            const cityY = Math.round(city.y);
+            
+            const startDistance = Math.sqrt(
+                Math.pow(startX - cityX, 2) + Math.pow(startY - cityY, 2)
+            );
+            const endDistance = Math.sqrt(
+                Math.pow(endX - cityX, 2) + Math.pow(endY - cityY, 2)
+            );
+            
+            if (startDistance <= proximityThreshold || endDistance <= proximityThreshold) {
+                passedThroughCities.add(city.name);
+            }
+        }
+    }
+    
+    // Track all cities that were passed through
+    passedThroughCities.forEach(cityName => {
+        trackCityVisit(cityName);
+    });
+    
+    console.log(`Path passed through ${passedThroughCities.size} cities:`, Array.from(passedThroughCities));
+}
+
+function updateLeaderboard() {
+    const leaderboardEmpty = document.getElementById('leaderboard-empty');
+    const leaderboardList = document.getElementById('leaderboard-list');
+    
+    if (cityVisitCounts.size === 0) {
+        leaderboardEmpty.style.display = 'block';
+        leaderboardList.style.display = 'none';
+        return;
+    }
+    
+    leaderboardEmpty.style.display = 'none';
+    leaderboardList.style.display = 'block';
+    
+    // Convert map to array and sort by visit count
+    const sortedCities = Array.from(cityVisitCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 20); // Top 20 cities
+    
+    // Clear the list
+    leaderboardList.innerHTML = '';
+    
+    // Add cities to the leaderboard
+    sortedCities.forEach(([cityName, visitCount]) => {
+        const listItem = document.createElement('li');
+        
+        const cityNameSpan = document.createElement('span');
+        cityNameSpan.className = 'leaderboard-city-name';
+        cityNameSpan.textContent = cityName;
+        
+        const countSpan = document.createElement('span');
+        countSpan.className = 'leaderboard-count';
+        countSpan.textContent = visitCount;
+        
+        // Add traffic level styling based on visit count
+        const maxCount = Math.max(...cityVisitCounts.values());
+        if (visitCount >= maxCount * 0.7) {
+            countSpan.classList.add('high-traffic');
+        } else if (visitCount >= maxCount * 0.3) {
+            countSpan.classList.add('medium-traffic');
+        } else {
+            countSpan.classList.add('low-traffic');
+        }
+        
+        listItem.appendChild(cityNameSpan);
+        listItem.appendChild(countSpan);
+        leaderboardList.appendChild(listItem);
+    });
+}
 
 function masterDraw() {
     // A single function to redraw the entire state of all canvases.
@@ -516,6 +652,10 @@ startButton.addEventListener('click', async () => {
         allPaths = [];
         roadUsageMap.clear();
         
+        // Reset city visit tracking for new simulation
+        cityVisitCounts.clear();
+        updateLeaderboard();
+        
         // Redraw base state
         drawCities();
         
@@ -557,6 +697,9 @@ worker.onmessage = (e) => {
         } else if (type === 'pathFound') {
         isPathfindingActive = false; // Stop the animation loop
         const { path, pathWithUsage, startCity, endCity } = payload;
+        
+        // Track cities that the path passes through
+        trackCitiesAlongPath(path);
         
         // Create path object with initial styling
         const pathObj = {
