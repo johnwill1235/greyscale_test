@@ -681,6 +681,10 @@ startButton.addEventListener('click', async () => {
         
         worker.postMessage({ type: 'start' });
         console.log('Simulation start message sent to worker');
+        
+        // Automatically minimize the menu when simulation starts
+        minimizeControls();
+        
         // Note: Start button will be re-enabled when simulation is running or if there's an error
         
     } catch (error) {
