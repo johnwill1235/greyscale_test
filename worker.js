@@ -22,9 +22,16 @@ const state = {
     minPopulation: 0,
     maxPopulation: 0,
     pgw: null,
+    currentRegion: 'china', // Track current region
     // FPS control
     targetFPS: 120,
     lastFrameTime: 0,
+    // Dynamic paths
+    currentPaths: {
+        cities: 'data/china/cities.geojson',
+        map: 'data/china/map.png',
+        pgw: 'data/china/map.pgw'
+    }
 };
 
 function parsePgw(text) {
@@ -58,14 +65,13 @@ function lonLatToPixel(lon, lat) {
     return { x, y };
 }
 
-
-async function setup() {
+async function loadRegionData(citiesPath, mapPath, pgwPath) {
     try {
-        postMessage({ type: 'log', payload: 'Loading data...' });
+        postMessage({ type: 'log', payload: 'Loading region data...' });
 
         const [citiesResponse, pgwResponse] = await Promise.all([
-            fetch('data/cities.geojson'),
-            fetch('data/map.pgw')
+            fetch(citiesPath),
+            fetch(pgwPath)
         ]);
 
         if (!citiesResponse.ok || !pgwResponse.ok) {
@@ -77,12 +83,18 @@ async function setup() {
         
         state.pgw = parsePgw(pgwText);
 
+        // Handle different GeoJSON structures for USA vs China
         state.cities = citiesData.features.map(feature => {
             const [lon, lat] = feature.geometry.coordinates;
             const { x, y } = lonLatToPixel(lon, lat);
+            
+            // USA uses 'City' and 'Population' (capital), China uses 'city_ascii' and 'population' (lowercase)
+            const cityName = feature.properties.city_ascii || feature.properties.City || feature.properties.city || 'Unknown';
+            const population = feature.properties.population || feature.properties.Population || 1;
+            
             return {
-                name: feature.properties.city_ascii, // Fixed: using city_ascii instead of city
-                population: feature.properties.population || 1, // Default pop if null
+                name: cityName,
+                population: population,
                 lon,
                 lat,
                 x,
@@ -102,7 +114,7 @@ async function setup() {
         postMessage({ type: 'log', payload: 'City data processed.' });
         
         // Now load the map image to build the cost grid
-        const mapImageResponse = await fetch('data/map.png');
+        const mapImageResponse = await fetch(mapPath);
         if (!mapImageResponse.ok) {
             throw new Error('Failed to fetch map image.');
         }
@@ -123,13 +135,22 @@ async function setup() {
         createCostGrid();
         postMessage({ type: 'log', payload: 'Cost grid created.' });
 
-        postMessage({ type: 'log', payload: 'Setup complete!' });
+        postMessage({ type: 'log', payload: 'Region data loaded successfully!' });
         console.log('Worker state:', state);
 
     } catch (error) {
-        postMessage({ type: 'log', payload: `Error during setup: ${error.message}` });
+        postMessage({ type: 'log', payload: `Error loading region data: ${error.message}` });
         console.error(error);
     }
+}
+
+async function setup() {
+    // Load initial region (China)
+    await loadRegionData(
+        state.currentPaths.cities,
+        state.currentPaths.map,
+        state.currentPaths.pgw
+    );
 }
 
 function createCostGrid() {
@@ -531,14 +552,14 @@ async function findPath(startCity, endCity) {
 
             // Step 1: Calculate the base cost from terrain, regardless of roads.
             if (neighborElevation === -1) {
-                moveCost = 15.0; // Water has a high flat cost
+                // Water/river cost varies by region - USA has lower river costs
+                moveCost = state.currentRegion === 'usa' ? 3.0 : 15.0;
             } 
             else {
                 const baseCost = 1.0;
-                // Higher factor = more expensive to go uphill.
-                const uphillFactor = 5;
-                // Higher factor = bigger discount for going downhill.
-                const downhillFactor = 0.5;
+                // Region-specific terrain factors - USA has less terrain impact
+                const uphillFactor = state.currentRegion === 'usa' ? 2.0 : 5.0;
+                const downhillFactor = state.currentRegion === 'usa' ? 0.3 : 0.5;
 
                 // New logic: higher 'r' value (lighter color) means higher elevation.
                 // elevationDiff > 0 is uphill, < 0 is downhill.
@@ -623,14 +644,25 @@ function weightedRandom(items) {
 }
 
 function pickStartCity() {
+    if (!state.cities || state.cities.length === 0) {
+        return null;
+    }
+    
     const weightedCities = state.cities.map(city => ({
         item: city,
-        weight: city.population
+        weight: city.population || 1 // Ensure no zero weights
     }));
-    return weightedRandom(weightedCities);
+    
+    const selected = weightedRandom(weightedCities);
+    postMessage({ type: 'log', payload: `Selected start city: ${selected?.name} (pop: ${selected?.population})` });
+    return selected;
 }
 
 function pickEndCity(startCity) {
+    if (!startCity || !state.cities || state.cities.length < 2) {
+        return null;
+    }
+    
     const weightedCities = state.cities
         .filter(city => city.name !== startCity.name)
         .map(city => {
@@ -641,13 +673,17 @@ function pickEndCity(startCity) {
 
             // Favor population, but penalize distance.
             // The distance penalty is softened (sqrt) to allow for some long-distance connections.
-            const weight = city.population / Math.sqrt(distance);
+            const population = city.population || 1; // Ensure no zero populations
+            const weight = population / Math.sqrt(distance);
 
             return { item: city, weight };
         });
     
     if (weightedCities.length === 0) return null;
-    return weightedRandom(weightedCities);
+    
+    const selected = weightedRandom(weightedCities);
+    postMessage({ type: 'log', payload: `Selected end city: ${selected?.name} (pop: ${selected?.population})` });
+    return selected;
 }
 
 let nextPathResolver = null;
@@ -669,37 +705,54 @@ async function simulationLoop() {
         }
         isFirstPath = false;
 
+        // Validate we have cities before trying to pick them
+        if (!state.cities || state.cities.length === 0) {
+            postMessage({ type: 'log', payload: 'No cities available, waiting...' });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+        }
+
         const startCity = pickStartCity();
         const endCity = pickEndCity(startCity);
+        
+        postMessage({ type: 'log', payload: `Picked cities: ${startCity?.name} -> ${endCity?.name}` });
 
         if (startCity && endCity) {
             postMessage({ type: 'log', payload: `${'='.repeat(80)}` });
             postMessage({ type: 'findingPath', payload: { from: startCity.name, to: endCity.name } });
-            const result = await findPath(startCity, endCity);
+            
+            try {
+                const result = await findPath(startCity, endCity);
 
-            if (result) {
-                const {path, efficiency} = result;
-                
-                // Get usage data for each pixel in the path
-                const pathWithUsage = path.map(pixelIndex => ({
-                    index: pixelIndex,
-                    usage: state.map.roadUsageGrid[pixelIndex] || 0
-                }));
-                
-                postMessage({ 
-                    type: 'pathFound', 
-                    payload: { 
-                        path, 
-                        pathWithUsage,
-                        startCity, 
-                        endCity, 
-                        efficiency 
-                    } 
-                });
-                updateCostGridWithRoad(path);
+                if (result) {
+                    const {path, efficiency} = result;
+                    
+                    // Get usage data for each pixel in the path
+                    const pathWithUsage = path.map(pixelIndex => ({
+                        index: pixelIndex,
+                        usage: state.map.roadUsageGrid[pixelIndex] || 0
+                    }));
+                    
+                    postMessage({ 
+                        type: 'pathFound', 
+                        payload: { 
+                            path, 
+                            pathWithUsage,
+                            startCity, 
+                            endCity, 
+                            efficiency 
+                        } 
+                    });
+                    updateCostGridWithRoad(path);
+                } else {
+                    postMessage({ type: 'log', payload: 'No path found between cities' });
+                }
+            } catch (error) {
+                postMessage({ type: 'log', payload: `Error finding path: ${error.message}` });
             }
         } else {
              // If no cities, just wait a bit
+             postMessage({ type: 'log', payload: 'Could not pick valid cities, waiting...' });
              await new Promise(resolve => setTimeout(resolve, 1000));
         }
         
@@ -715,7 +768,7 @@ async function simulationLoop() {
 
 
 self.onmessage = (e) => {
-    const { type } = e.data;
+    const { type, payload } = e.data;
 
     if (type === 'start') {
         postMessage({ type: 'log', payload: 'Worker started.' });
@@ -725,9 +778,38 @@ self.onmessage = (e) => {
             state.map.roadUsageGrid.fill(0); // Reset road usage tracking
         }
         
-        setup().then(() => {
+        // Only run setup if we don't have cities loaded already
+        if (!state.cities || state.cities.length === 0) {
+            postMessage({ type: 'log', payload: 'Loading initial setup...' });
+            setup().then(() => {
+                simulationLoop();
+            });
+        } else {
+            postMessage({ type: 'log', payload: 'Using existing region data for simulation...' });
             simulationLoop();
-        });
+        }
+    } else if (type === 'loadRegion') {
+        postMessage({ type: 'log', payload: `Loading region: ${payload.region}` });
+        
+        // Update current region
+        state.currentRegion = payload.region;
+        
+        // Update current paths
+        state.currentPaths = {
+            cities: payload.citiesPath,
+            map: payload.mapPath,
+            pgw: payload.pgwPath
+        };
+        
+        // Reset state
+        state.cities = [];
+        state.map.imageData = null;
+        state.map.elevationGrid = null;
+        state.map.roadUsageGrid = null;
+        state.map.cityInfluenceGrid = null;
+        
+        // Load new region data
+        loadRegionData(payload.citiesPath, payload.mapPath, payload.pgwPath);
     } else if (type === 'readyForNextPath') {
         if (nextPathResolver) {
             nextPathResolver();

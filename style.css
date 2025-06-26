@@ -8,9 +8,8 @@ html, body {
 
 #controls {
     position: absolute;
-    top: 50%;
+    bottom: 20px;
     left: 20px;
-    transform: translateY(-50%);
     z-index: 10;
     background-color: rgba(255, 255, 255, 0.8);
     padding: 20px;
@@ -21,6 +20,24 @@ html, body {
 
 h1 {
     margin: 0 0 10px 0;
+}
+
+#region-selection, #map-selection {
+    margin-bottom: 15px;
+}
+
+#region-selection label, #map-selection label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+#region-select, #map-type {
+    width: 100%;
+    padding: 5px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
 }
 
 #container {
@@ -47,6 +64,11 @@ canvas {
     font-size: 16px;
     cursor: pointer;
     margin: 0;
+    width: 100%;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
 }
 
  

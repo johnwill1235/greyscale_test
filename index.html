@@ -16,7 +16,21 @@
     </div>
     <div id="controls">
         <h1>Road Builder</h1>
-        <button id="start-button">Start</button>
+        <div id="region-selection">
+            <label for="region-select">Region:</label>
+            <select id="region-select">
+                <option value="china">China</option>
+                <option value="usa">USA</option>
+            </select>
+        </div>
+        <div id="map-selection">
+            <label for="map-type">Map Type:</label>
+            <select id="map-type">
+                <option value="viewmap">Graphic</option>
+                <option value="satmap">Satellite</option>
+            </select>
+        </div>
+        <button id="start-button" disabled>Start</button>
     </div>
 
     <script src="main.js"></script>

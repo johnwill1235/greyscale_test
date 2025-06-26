@@ -1,9 +1,10 @@
 const startButton = document.getElementById('start-button');
+const mapTypeSelect = document.getElementById('map-type');
+const regionSelect = document.getElementById('region-select');
 const mapCanvas = document.getElementById('map-canvas');
 const animationCanvas = document.getElementById('animation-canvas');
 const roadCanvas = document.getElementById('road-canvas');
 const cityCanvas = document.getElementById('city-canvas');
-
 
 const mapCtx = mapCanvas.getContext('2d');
 const animationCtx = animationCanvas.getContext('2d');
@@ -15,10 +16,11 @@ const worker = new Worker('worker.js');
 let mapWidth = 0;
 let mapHeight = 0;
 let cities = [];
-let allPaths = []; // Array of {path: [], usageData: Map, maxUsage: number, strokeStyle: string}
+let allPaths = []; // Array of {path: [], usageData: Map, maxUsage: number, strokeStyle: string, lineWidth: number}
 let roadUsageMap = new Map(); // Global usage tracking for all roads
 let currentStartCityName = null;
 let currentEndCityName = null;
+let currentRegion = 'china'; // Default region
 
 // Animation state
 let animationFrameId;
@@ -30,35 +32,176 @@ let exploredPixelsBitmap = null; // Use a bitmap for memory efficiency
 let exploredCanvas = null; // Offscreen canvas for explored areas
 let exploredCtx = null;
 
+// Dynamic path generation based on region and map type
+function getMapPaths(region, mapType) {
+    const regionPaths = {
+        china: {
+            cities: 'data/china/cities.geojson',
+            map: 'data/china/map.png',
+            pgw: 'data/china/map.pgw',
+            viewmap: 'data/china/viewmap.png',
+            satmap: 'data/china/satmap.png'
+        },
+        usa: {
+            cities: 'data/usa/usacities.geojson',
+            map: 'data/usa/greyscale_usa.png',
+            pgw: 'data/usa/greyscale_usa.pgw',
+            viewmap: 'data/usa/viewmap_usa.png',
+            satmap: 'data/usa/usasatellite.png'
+        }
+    };
+    
+    const paths = regionPaths[region];
+    return {
+        cities: paths.cities,
+        map: paths.map,
+        pgw: paths.pgw,
+        display: mapType === 'satmap' ? paths.satmap : paths.viewmap
+    };
+}
+
 // Load map images
-const calculationMapImage = new Image();
-calculationMapImage.src = 'data/map.png';
+let calculationMapImage = new Image();
+let displayMapImage = new Image();
+let currentDisplayMapSrc = '';
 
-const displayMapImage = new Image();
-displayMapImage.src = 'data/viewmap.png';
-
-const calculationMapPromise = new Promise(resolve => calculationMapImage.onload = resolve);
-const displayMapPromise = new Promise(resolve => displayMapImage.onload = resolve);
-
-Promise.all([calculationMapPromise, displayMapPromise]).then(() => {
-    mapWidth = mapCanvas.width = calculationMapImage.width;
-    mapHeight = mapCanvas.height = calculationMapImage.height;
-    animationCanvas.width = calculationMapImage.width;
-    animationCanvas.height = calculationMapImage.height;
-    roadCanvas.width = calculationMapImage.width;
-    roadCanvas.height = calculationMapImage.height;
-    cityCanvas.width = calculationMapImage.width;
-    cityCanvas.height = calculationMapImage.height;
+function loadMaps(region, mapType) {
+    const paths = getMapPaths(region, mapType);
     
-    // Create offscreen canvas for explored areas
-    exploredCanvas = new OffscreenCanvas(mapWidth, mapHeight);
-    exploredCtx = exploredCanvas.getContext('2d');
+    // Update current region
+    currentRegion = region;
     
-    // Initialize bitmap for tracking explored pixels
-    exploredPixelsBitmap = new Uint8Array(mapWidth * mapHeight);
+    // Load calculation map (always the greyscale map for pathfinding)
+    calculationMapImage = new Image();
+    const calculationMapPromise = new Promise(resolve => {
+        calculationMapImage.onload = resolve;
+    });
+    calculationMapImage.src = paths.map;
+    
+    // Load display map
+    const newDisplaySrc = paths.display;
+    displayMapImage = new Image();
+    const displayMapPromise = new Promise(resolve => {
+        displayMapImage.onload = () => {
+            currentDisplayMapSrc = newDisplaySrc;
+            resolve();
+        };
+    });
+    displayMapImage.src = newDisplaySrc;
+    
+    return Promise.all([calculationMapPromise, displayMapPromise]).then(() => {
+        mapWidth = mapCanvas.width = calculationMapImage.width;
+        mapHeight = mapCanvas.height = calculationMapImage.height;
+        animationCanvas.width = calculationMapImage.width;
+        animationCanvas.height = calculationMapImage.height;
+        roadCanvas.width = calculationMapImage.width;
+        roadCanvas.height = calculationMapImage.height;
+        cityCanvas.width = calculationMapImage.width;
+        cityCanvas.height = calculationMapImage.height;
+        
+        // Create offscreen canvas for explored areas
+        exploredCanvas = new OffscreenCanvas(mapWidth, mapHeight);
+        exploredCtx = exploredCanvas.getContext('2d');
+        
+        // Initialize bitmap for tracking explored pixels
+        exploredPixelsBitmap = new Uint8Array(mapWidth * mapHeight);
 
-    // Scale the viewmap to match the calculation map size
-    mapCtx.drawImage(displayMapImage, 0, 0, mapWidth, mapHeight);
+        // Scale the display map to match the calculation map size
+        mapCtx.drawImage(displayMapImage, 0, 0, mapWidth, mapHeight);
+        
+        // Notify worker about the region change
+        const paths = getMapPaths(currentRegion, mapTypeSelect.value);
+        worker.postMessage({ 
+            type: 'loadRegion', 
+            payload: { 
+                region: currentRegion,
+                citiesPath: paths.cities,
+                mapPath: paths.map,
+                pgwPath: paths.pgw
+            } 
+        });
+    });
+}
+
+function loadDisplayMap(mapType) {
+    const paths = getMapPaths(currentRegion, mapType);
+    const newSrc = paths.display;
+    
+    if (newSrc !== currentDisplayMapSrc) {
+        currentDisplayMapSrc = newSrc;
+        displayMapImage = new Image();
+        
+        return new Promise(resolve => {
+            displayMapImage.onload = () => {
+                // Redraw the map canvas with the new image
+                mapCtx.drawImage(displayMapImage, 0, 0, mapWidth, mapHeight);
+                resolve();
+            };
+            displayMapImage.src = newSrc;
+        });
+    }
+    
+    return Promise.resolve();
+}
+
+// Initialize with default region and map type
+loadMaps('china', 'viewmap').then(() => {
+    // Enable start button after initial maps are loaded
+    startButton.disabled = false;
+    console.log('Initial maps loaded, start button enabled');
+}).catch(error => {
+    console.error('Error loading initial maps:', error);
+    startButton.disabled = false; // Enable anyway so user can try
+});
+
+// Add event listeners for map type and region changes
+mapTypeSelect.addEventListener('change', () => {
+    const selectedMapType = mapTypeSelect.value;
+    loadDisplayMap(selectedMapType);
+});
+
+regionSelect.addEventListener('change', () => {
+    const selectedRegion = regionSelect.value;
+    const selectedMapType = mapTypeSelect.value;
+    
+    // Disable start button while switching regions
+    startButton.disabled = true;
+    
+    // Clear all existing data when switching regions
+    isPathfindingActive = false;
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
+    tendrilsToDraw = [];
+    currentStartCityName = null;
+    currentEndCityName = null;
+    allPaths = [];
+    roadUsageMap.clear();
+    cities = [];
+    
+    // Clear all canvases
+    if (mapWidth && mapHeight) {
+        roadCtx.clearRect(0, 0, mapWidth, mapHeight);
+        cityCtx.clearRect(0, 0, mapWidth, mapHeight);
+        animationCtx.clearRect(0, 0, mapWidth, mapHeight);
+        if (exploredPixelsBitmap) {
+            exploredPixelsBitmap.fill(0);
+        }
+        if (exploredCtx) {
+            exploredCtx.clearRect(0, 0, mapWidth, mapHeight);
+        }
+    }
+    
+    // Load new region
+    loadMaps(selectedRegion, selectedMapType).then(() => {
+        // Re-enable start button after region is loaded
+        startButton.disabled = false;
+        console.log('Region switched, start button enabled');
+    }).catch(error => {
+        console.error('Error switching region:', error);
+        startButton.disabled = false; // Enable anyway so user can try
+    });
 });
 
 function masterDraw() {
@@ -195,36 +338,16 @@ function getGradientColor(rank) {
     return `rgb(${r}, 0, 0)`;
 }
 
-function calculateStrokeStyle(maxUsage) {
-    if (maxUsage >= 12) {
-        // Fully developed road: transition from 70% opacity brown to 100% opacity black
-        // Assume max development around 30 uses for full transition
-        const developmentLevel = Math.min((maxUsage - 12) / 18, 1); // 0 to 1
-        
-        if (developmentLevel === 0) {
-            // Start of development: 70% opacity brown
-            return 'rgba(139, 69, 19, 0.7)'; // Brown at 70% opacity
-        } else if (developmentLevel >= 1) {
-            // Fully developed: 100% opacity black
-            return 'rgba(0, 0, 0, 1.0)';
-        } else {
-            // Transition: interpolate from brown to black, opacity from 70% to 100%
-            const brown = [139, 69, 19];
-            const black = [0, 0, 0];
-            const r = Math.round(brown[0] * (1 - developmentLevel) + black[0] * developmentLevel);
-            const g = Math.round(brown[1] * (1 - developmentLevel) + black[1] * developmentLevel);
-            const b = Math.round(brown[2] * (1 - developmentLevel) + black[2] * developmentLevel);
-            const opacity = 0.7 + (0.3 * developmentLevel); // 70% to 100%
-            return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-        }
-    } else {
-        // Basic road: keep original low-opacity black
-        return 'rgba(0, 0, 0, 0.7)';
-    }
+function calculateRoadProperties(maxUsage) {
+    // All roads are black, but mature roads (12+ uses) get double thickness
+    return {
+        strokeStyle: 'rgba(0, 0, 0, 0.8)', // All roads are black
+        lineWidth: maxUsage >= 12 ? 3.0 : 1.5 // Double thickness for mature roads
+    };
 }
 
-function updatePathColors() {
-    // Only recalculate colors for paths that might have changed
+function updatePathProperties() {
+    // Only recalculate properties for paths that might have changed
     allPaths.forEach(pathData => {
         const path = pathData.path || pathData; // Handle both old and new format
         
@@ -238,7 +361,9 @@ function updatePathColors() {
         // Only update if maxUsage changed
         if (pathData.maxUsage !== maxUsage) {
             pathData.maxUsage = maxUsage;
-            pathData.strokeStyle = calculateStrokeStyle(maxUsage);
+            const roadProps = calculateRoadProperties(maxUsage);
+            pathData.strokeStyle = roadProps.strokeStyle;
+            pathData.lineWidth = roadProps.lineWidth;
         }
     });
 }
@@ -249,11 +374,12 @@ function drawAllRoads() {
     allPaths.forEach(pathData => {
         const path = pathData.path || pathData; // Handle both old and new format
         
-        // Use cached stroke style if available
-        const strokeStyle = pathData.strokeStyle || 'rgba(0, 0, 0, 0.7)';
+        // Use cached properties if available
+        const strokeStyle = pathData.strokeStyle || 'rgba(0, 0, 0, 0.8)';
+        const lineWidth = pathData.lineWidth || 1.5;
         
         roadCtx.strokeStyle = strokeStyle;
-        roadCtx.lineWidth = 1.5;
+        roadCtx.lineWidth = lineWidth;
         roadCtx.beginPath();
         
         // Convert path to coordinates and draw
@@ -272,8 +398,6 @@ function drawAllRoads() {
         roadCtx.stroke();
     });
 }
-
-
 
 function clearExploredAreas() {
     if (exploredPixelsBitmap) {
@@ -308,6 +432,10 @@ function drawLightning(path) {
             currentStartCityName = null;
             currentEndCityName = null;
             drawCities(); // Redraw cities to remove highlights
+            
+            // Re-enable start button after each path completes
+            startButton.disabled = false;
+            
             worker.postMessage({ type: 'readyForNextPath' });
             return;
         }
@@ -331,45 +459,75 @@ function drawLightning(path) {
 }
 
 function drawPermanentRoad(pathCoords) {
-    roadCtx.strokeStyle = 'rgba(0, 0, 0, 0.7)'; // Changed to black
-    roadCtx.lineWidth = 1.5; // Half thickness
+    roadCtx.strokeStyle = 'rgba(0, 0, 0, 0.8)'; // Black roads
+    roadCtx.lineWidth = 1.5; // Standard thickness
     roadCtx.beginPath();
     roadCtx.moveTo(pathCoords[0].x, pathCoords[0].y);
     pathCoords.forEach(p => roadCtx.lineTo(p.x, p.y));
     roadCtx.stroke();
 }
 
-startButton.addEventListener('click', () => {
+startButton.addEventListener('click', async () => {
     console.log('Starting simulation...');
     startButton.disabled = true;
     
-    // Clear all previous state when starting new simulation
-    isPathfindingActive = false;
-    if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-        animationFrameId = null;
+    try {
+        // Check if we have valid map dimensions
+        if (!mapWidth || !mapHeight) {
+            console.error('Maps not loaded yet');
+            alert('Please wait for maps to load before starting simulation');
+            startButton.disabled = false;
+            return;
+        }
+        
+        // Check if we have cities data
+        if (!cities || cities.length === 0) {
+            console.error('No cities data available');
+            alert('No cities data available. Please try switching regions.');
+            startButton.disabled = false;
+            return;
+        }
+        
+        console.log(`Starting simulation with ${cities.length} cities on ${mapWidth}x${mapHeight} map`);
+        
+        // Load the selected map type before starting
+        const selectedMapType = mapTypeSelect.value;
+        await loadDisplayMap(selectedMapType);
+        
+        // Clear all previous state when starting new simulation
+        isPathfindingActive = false;
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+        tendrilsToDraw = [];
+        currentStartCityName = null;
+        currentEndCityName = null;
+        
+        // Clear explored areas from previous simulations
+        clearExploredAreas();
+        
+        // Clear all canvases to start fresh
+        roadCtx.clearRect(0, 0, mapWidth, mapHeight);
+        cityCtx.clearRect(0, 0, mapWidth, mapHeight);
+        animationCtx.clearRect(0, 0, mapWidth, mapHeight);
+        
+        // Reset road data
+        allPaths = [];
+        roadUsageMap.clear();
+        
+        // Redraw base state
+        drawCities();
+        
+        worker.postMessage({ type: 'start' });
+        console.log('Simulation start message sent to worker');
+        // Note: Start button will be re-enabled when simulation is running or if there's an error
+        
+    } catch (error) {
+        console.error('Error starting simulation:', error);
+        alert('Error starting simulation: ' + error.message);
+        startButton.disabled = false;
     }
-    tendrilsToDraw = [];
-    currentStartCityName = null;
-    currentEndCityName = null;
-    
-    // Clear explored areas from previous simulations
-    clearExploredAreas();
-    
-    // Clear all canvases to start fresh
-    roadCtx.clearRect(0, 0, mapWidth, mapHeight);
-    cityCtx.clearRect(0, 0, mapWidth, mapHeight);
-    animationCtx.clearRect(0, 0, mapWidth, mapHeight);
-    
-    // Reset road data
-    allPaths = [];
-    roadUsageMap.clear();
-    
-    // Redraw base state
-    drawCities();
-    
-    worker.postMessage({ type: 'start' });
-    // The animation loop will now be started by the 'findingPath' message.
 });
 
 worker.onmessage = (e) => {
@@ -380,6 +538,11 @@ worker.onmessage = (e) => {
     } else if (type === 'citiesData') {
         cities = payload;
         drawCities();
+        // Re-enable start button when cities are loaded
+        if (!isPathfindingActive) {
+            startButton.disabled = false;
+        }
+        console.log(`Loaded ${cities.length} cities`);
     } else if (type === 'findingPath') {
         isPathfindingActive = true;
         clearExploredAreas();
@@ -399,7 +562,8 @@ worker.onmessage = (e) => {
         const pathObj = {
             path: path,
             maxUsage: 0,
-            strokeStyle: 'rgba(0, 0, 0, 0.7)' // Default style
+            strokeStyle: 'rgba(0, 0, 0, 0.8)', // Default style
+            lineWidth: 1.5 // Default thickness
         };
         allPaths.push(pathObj);
         
@@ -410,8 +574,8 @@ worker.onmessage = (e) => {
             });
         }
         
-        // Only update colors for paths that might have changed usage
-        updatePathColors();
+        // Only update properties for paths that might have changed usage
+        updatePathProperties();
         
         // Redraw roads with updated colors
         drawAllRoads();
