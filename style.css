@@ -16,10 +16,72 @@ html, body {
     border-radius: 10px;
     max-height: calc(100vh - 40px);
     overflow-y: auto;
+    transition: all 0.3s ease;
+}
+
+#controls.minimized {
+    display: none;
+}
+
+#controls-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+#minimize-button {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    margin-left: 15px;
+}
+
+#minimize-button:hover {
+    background-color: #c82333;
+    transform: scale(1.1);
+}
+
+#controls-minimized {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    z-index: 10;
+    background-color: rgba(0, 123, 255, 0.9);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    font-size: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+#controls-minimized:hover {
+    background-color: rgba(0, 123, 255, 1);
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
 }
 
 h1 {
-    margin: 0 0 10px 0;
+    margin: 0;
+    flex-grow: 1;
 }
 
 #region-selection, #map-selection {

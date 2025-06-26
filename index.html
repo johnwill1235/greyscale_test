@@ -15,32 +15,40 @@
         <canvas id="city-canvas"></canvas>
     </div>
     <div id="controls">
-        <h1>Road Builder</h1>
-        <div id="region-selection">
-            <label for="region-select">Region:</label>
-            <select id="region-select">
-                <option value="china">China</option>
-                <option value="usa">USA</option>
-            </select>
+        <div id="controls-header">
+            <h1>Road Builder</h1>
+            <button id="minimize-button" title="Minimize menu">−</button>
         </div>
-        <div id="map-selection">
-            <label for="map-type">Map Type:</label>
-            <select id="map-type">
-                <option value="viewmap">Graphic</option>
-                <option value="satmap">Satellite</option>
-            </select>
-        </div>
-        <button id="start-button" disabled>Start</button>
-        
-        <div id="leaderboard-section">
-            <h2>City Leaderboard</h2>
-            <p class="leaderboard-description">Cities Most Passed Through by Roads (Top 20)</p>
-            <div id="leaderboard-container">
-                <div id="leaderboard-empty">Start simulation to see city statistics</div>
-                <ol id="leaderboard-list" style="display: none;"></ol>
+        <div id="controls-content">
+            <div id="region-selection">
+                <label for="region-select">Region:</label>
+                <select id="region-select">
+                    <option value="china">China</option>
+                    <option value="usa">USA</option>
+                </select>
+            </div>
+            <div id="map-selection">
+                <label for="map-type">Map Type:</label>
+                <select id="map-type">
+                    <option value="viewmap">Graphic</option>
+                    <option value="satmap">Satellite</option>
+                </select>
+            </div>
+            <button id="start-button" disabled>Start</button>
+            
+            <div id="leaderboard-section">
+                <h2>City Leaderboard</h2>
+                <p class="leaderboard-description">Cities Most Passed Through by Roads (Top 20)</p>
+                <div id="leaderboard-container">
+                    <div id="leaderboard-empty">Start simulation to see city statistics</div>
+                    <ol id="leaderboard-list" style="display: none;"></ol>
+                </div>
             </div>
         </div>
     </div>
+
+    <!-- Minimized controls button -->
+    <button id="controls-minimized" style="display: none;" title="Show menu">☰</button>
 
     <script src="main.js"></script>
 </body>

@@ -6,6 +6,11 @@ const animationCanvas = document.getElementById('animation-canvas');
 const roadCanvas = document.getElementById('road-canvas');
 const cityCanvas = document.getElementById('city-canvas');
 
+// Controls minimize/maximize elements
+const controlsPanel = document.getElementById('controls');
+const minimizeButton = document.getElementById('minimize-button');
+const controlsMinimized = document.getElementById('controls-minimized');
+
 const mapCtx = mapCanvas.getContext('2d');
 const animationCtx = animationCanvas.getContext('2d');
 const roadCtx = roadCanvas.getContext('2d');
@@ -290,6 +295,21 @@ function trackCitiesAlongPath(path) {
     
     console.log(`Path passed through ${passedThroughCities.size} cities:`, Array.from(passedThroughCities));
 }
+
+// Controls minimize/maximize functionality
+function minimizeControls() {
+    controlsPanel.classList.add('minimized');
+    controlsMinimized.style.display = 'flex';
+}
+
+function maximizeControls() {
+    controlsPanel.classList.remove('minimized');
+    controlsMinimized.style.display = 'none';
+}
+
+// Add event listeners for minimize/maximize buttons
+minimizeButton.addEventListener('click', minimizeControls);
+controlsMinimized.addEventListener('click', maximizeControls);
 
 function updateLeaderboard() {
     const leaderboardEmpty = document.getElementById('leaderboard-empty');
